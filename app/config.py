@@ -2,22 +2,47 @@ import os
 
 
 class Settings:
-    """Centralized configuration loaded from environment variables."""
+    """Centralized configuration loaded from environment variables.
 
-    # API Keys
-    VIRUSTOTAL_API_KEY: str | None = os.getenv("VIRUSTOTAL_API_KEY")
-    GOOGLE_SAFE_BROWSING_API_KEY: str | None = os.getenv("GOOGLE_SAFE_BROWSING_API_KEY")
-    URLSCAN_API_KEY: str | None = os.getenv("URLSCAN_API_KEY")
-    OTX_API_KEY: str | None = os.getenv("OTX_API_KEY")
-    PHISHTANK_API_KEY: str | None = os.getenv("PHISHTANK_API_KEY")
-    ANTHROPIC_API_KEY: str | None = os.getenv("ANTHROPIC_API_KEY")
+    All API keys are read via properties so they resolve at access time,
+    not at class-definition / import time. This ensures env vars injected
+    by the runtime (e.g. Railway) are picked up even if they are set after
+    the module is first imported.
+    """
+
+    # --- API key properties (resolved at access time) ---
+    @property
+    def VIRUSTOTAL_API_KEY(self) -> str | None:
+        return os.getenv("VIRUSTOTAL_API_KEY")
+
+    @property
+    def GOOGLE_SAFE_BROWSING_API_KEY(self) -> str | None:
+        return os.getenv("GOOGLE_SAFE_BROWSING_API_KEY")
+
+    @property
+    def URLSCAN_API_KEY(self) -> str | None:
+        return os.getenv("URLSCAN_API_KEY")
+
+    @property
+    def OTX_API_KEY(self) -> str | None:
+        return os.getenv("OTX_API_KEY")
+
+    @property
+    def PHISHTANK_API_KEY(self) -> str | None:
+        return os.getenv("PHISHTANK_API_KEY")
+
+    @property
+    def ANTHROPIC_API_KEY(self) -> str | None:
+        return os.getenv("ANTHROPIC_API_KEY")
 
     # CORS
-    CORS_ORIGINS: list[str] = [
-        o.strip()
-        for o in os.getenv("CORS_ORIGINS", "*").split(",")
-        if o.strip()
-    ]
+    @property
+    def CORS_ORIGINS(self) -> list[str]:
+        return [
+            o.strip()
+            for o in os.getenv("CORS_ORIGINS", "*").split(",")
+            if o.strip()
+        ]
 
     # Module enable flags — True when the relevant key is present
     @property
