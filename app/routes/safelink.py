@@ -40,29 +40,36 @@ URL_MODULES = [
 ]
 
 
-@router.post("/scan", response_model=ScanResponse)
-async def scan_url(request: URLScanRequest):
-    url = request.url
+async def run_url_pipeline(url: str, skip_modules: set[str] | None = None) -> tuple[list, int, str]:
+    """Run URL scan modules, optionally skipping some. Returns (module_results, risk_score, verdict)."""
+    modules_to_run = URL_MODULES
+    if skip_modules:
+        modules_to_run = [m for m in URL_MODULES if m.__name__.split(".")[-1] not in skip_modules]
 
-    # Run all modules in parallel
-    tasks = [module.scan(url) for module in URL_MODULES]
+    tasks = [module.scan(url) for module in modules_to_run]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Convert exceptions to error results
     module_results = []
     for i, result in enumerate(results):
         if isinstance(result, Exception):
             from app.models import ModuleResult
             module_results.append(ModuleResult(
-                module=URL_MODULES[i].__name__.split(".")[-1],
+                module=modules_to_run[i].__name__.split(".")[-1],
                 status="error",
                 findings={"error": str(result)},
             ))
         else:
             module_results.append(result)
 
-    # Compute score and verdict
     risk_score, verdict = score_url(module_results)
+    return module_results, risk_score, verdict
+
+
+@router.post("/scan", response_model=ScanResponse)
+async def scan_url(request: URLScanRequest):
+    url = request.url
+
+    module_results, risk_score, verdict = await run_url_pipeline(url)
 
     # AI analyst verdict
     ai_verdict = await analyze("URL", url, module_results, risk_score, verdict)
