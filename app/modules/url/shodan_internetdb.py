@@ -1,4 +1,6 @@
+import logging
 import socket
+import traceback
 from urllib.parse import urlparse
 
 from app.config import settings
@@ -8,6 +10,8 @@ try:
     import httpx
 except ImportError:
     httpx = None  # type: ignore[assignment]
+
+logger = logging.getLogger(__name__)
 
 HIGH_RISK_TAGS = {"malicious", "scanner", "tor"}
 MEDIUM_RISK_TAGS = {"vpn"}
@@ -22,17 +26,28 @@ async def scan(url: str) -> ModuleResult:
 
     try:
         hostname = urlparse(url).hostname or ""
+        logger.info("[SHODAN] Resolving hostname: %s", hostname)
         try:
             ip = socket.gethostbyname(hostname)
         except socket.gaierror:
+            logger.warning("[SHODAN] DNS resolution failed for %s", hostname)
             return ModuleResult(
                 module="shodan_internetdb",
                 status="skipped",
                 findings={"detail": f"DNS resolution failed for {hostname}"},
             )
 
+        request_url = f"https://internetdb.shodan.io/{ip}"
+        logger.info("[SHODAN] Resolved IP: %s", ip)
+        logger.info("[SHODAN] Request URL: %s", request_url)
+
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"https://internetdb.shodan.io/{ip}")
+            resp = await client.get(request_url)
+            logger.info(
+                "[SHODAN] Response: status=%d body=%s",
+                resp.status_code,
+                resp.text[:500],
+            )
 
             if resp.status_code == 404:
                 return ModuleResult(
@@ -81,4 +96,5 @@ async def scan(url: str) -> ModuleResult:
             score_contribution=min(score, 35),
         )
     except Exception as e:
-        return ModuleResult(module="shodan_internetdb", status="error", findings={"error": str(e)})
+        logger.error("[SHODAN] Exception: %s\n%s", e, traceback.format_exc())
+        return ModuleResult(module="shodan_internetdb", status="error", findings={"error": str(e), "traceback": traceback.format_exc()})

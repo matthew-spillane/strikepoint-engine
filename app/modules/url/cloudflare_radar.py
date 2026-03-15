@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import traceback
 
 from app.config import settings
 from app.models import ModuleResult
@@ -32,12 +33,22 @@ async def scan(url: str) -> ModuleResult:
         }
         base_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/urlscanner/v2"
 
+        submit_url = f"{base_url}/scan"
+        logger.info("[CF_RADAR] Submit URL: %s", submit_url)
+        logger.info("[CF_RADAR] Account ID: %s", account_id)
+        logger.info("[CF_RADAR] Token present: %s", bool(settings.CLOUDFLARE_API_TOKEN))
+
         async with httpx.AsyncClient(timeout=15) as client:
             # Submit scan with unlisted visibility
             submit = await client.post(
-                f"{base_url}/scan",
+                submit_url,
                 json={"url": url, "visibility": "Unlisted"},
                 headers=headers,
+            )
+            logger.info(
+                "[CF_RADAR] Submission response: status=%d body=%s",
+                submit.status_code,
+                submit.text[:500],
             )
             submit.raise_for_status()
             submit_data = submit.json()
@@ -45,8 +56,9 @@ async def scan(url: str) -> ModuleResult:
             result_field = submit_data.get("result")
             if not isinstance(result_field, dict):
                 logger.error(
-                    "Cloudflare Radar submission returned unexpected response: %s",
-                    submit.text,
+                    "[CF_RADAR] Submission 'result' is not a dict (type=%s): %s",
+                    type(result_field).__name__,
+                    submit.text[:500],
                 )
                 return ModuleResult(
                     module="cloudflare_radar",
@@ -60,7 +72,7 @@ async def scan(url: str) -> ModuleResult:
             scan_id = result_field.get("uuid")
             if not scan_id:
                 logger.error(
-                    "Cloudflare Radar submission missing uuid: %s", submit.text
+                    "[CF_RADAR] Submission missing uuid key: %s", submit.text[:500]
                 )
                 return ModuleResult(
                     module="cloudflare_radar",
@@ -71,32 +83,45 @@ async def scan(url: str) -> ModuleResult:
                     },
                 )
 
+            logger.info("[CF_RADAR] Scan submitted, uuid=%s — starting poll", scan_id)
+
             # Poll for results
             elapsed = 0
             while elapsed < POLL_TIMEOUT:
                 await asyncio.sleep(POLL_INTERVAL)
                 elapsed += POLL_INTERVAL
 
-                poll = await client.get(f"{base_url}/result/{scan_id}", headers=headers)
+                poll_url = f"{base_url}/result/{scan_id}"
+                poll = await client.get(poll_url, headers=headers)
+                logger.info(
+                    "[CF_RADAR] Poll attempt %d/%ds: status=%d body=%s",
+                    elapsed,
+                    POLL_TIMEOUT,
+                    poll.status_code,
+                    poll.text[:500],
+                )
                 if poll.status_code == 200:
                     poll_body = poll.json()
                     data = poll_body.get("result")
                     # Intermediate responses may return result as a string
                     # (e.g. "pending"); only parse when we get a full dict.
                     if isinstance(data, dict):
+                        logger.info("[CF_RADAR] Got final dict result, parsing")
                         return _parse_result(data)
-                    logger.debug(
-                        "Cloudflare Radar poll returned non-dict result: %s",
+                    logger.info(
+                        "[CF_RADAR] Poll returned non-dict result (type=%s), continuing",
                         type(data).__name__,
                     )
 
+            logger.warning("[CF_RADAR] Polling timed out after %ds", POLL_TIMEOUT)
             return ModuleResult(
                 module="cloudflare_radar",
                 status="skipped",
                 findings={"detail": "Polling timed out"},
             )
     except Exception as e:
-        return ModuleResult(module="cloudflare_radar", status="error", findings={"error": str(e)})
+        logger.error("[CF_RADAR] Exception: %s\n%s", e, traceback.format_exc())
+        return ModuleResult(module="cloudflare_radar", status="error", findings={"error": str(e), "traceback": traceback.format_exc()})
 
 
 def _parse_result(data: dict) -> ModuleResult:

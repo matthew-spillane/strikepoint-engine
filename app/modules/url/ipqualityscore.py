@@ -1,4 +1,5 @@
 import logging
+import traceback
 from urllib.parse import quote_plus
 
 from app.config import settings
@@ -30,22 +31,25 @@ async def scan(url: str) -> ModuleResult:
 
         encoded_url = quote_plus(url)
         endpoint = f"https://www.ipqualityscore.com/api/json/url/{api_key}/{encoded_url}"
+        masked_endpoint = endpoint.replace(api_key, "***")
 
-        logger.debug("IPQS request URL: %s", endpoint.replace(api_key, "***"))
+        logger.info("[IPQS] Request URL: %s", masked_endpoint)
+        logger.info("[IPQS] Params: strictness=0")
 
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(endpoint, params={"strictness": 0})
+            logger.info("[IPQS] Response status: %d", resp.status_code)
+            logger.info("[IPQS] Response body (first 500 chars): %s", resp.text[:500])
             resp.raise_for_status()
 
             if not resp.text.strip():
-                logger.error("IPQS returned empty response body for URL: %s", url)
+                logger.error("[IPQS] Empty response body for URL: %s", url)
                 return ModuleResult(
                     module="ipqualityscore",
                     status="error",
                     findings={"error": "Empty response from IPQS API"},
                 )
 
-            logger.debug("IPQS raw response (first 300 chars): %s", resp.text[:300])
             data = resp.json()
 
         if not data.get("success", False):
@@ -118,4 +122,5 @@ async def scan(url: str) -> ModuleResult:
             score_contribution=min(score, 50),
         )
     except Exception as e:
-        return ModuleResult(module="ipqualityscore", status="error", findings={"error": str(e)})
+        logger.error("[IPQS] Exception: %s\n%s", e, traceback.format_exc())
+        return ModuleResult(module="ipqualityscore", status="error", findings={"error": str(e), "traceback": traceback.format_exc()})
