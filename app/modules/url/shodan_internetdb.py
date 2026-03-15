@@ -37,8 +37,9 @@ async def scan(url: str) -> ModuleResult:
             if resp.status_code == 404:
                 return ModuleResult(
                     module="shodan_internetdb",
-                    status="skipped",
-                    findings={"detail": f"No InternetDB record for {ip}"},
+                    status="completed",
+                    findings={"ip": ip, "detail": f"No InternetDB record for {ip}"},
+                    score_contribution=0,
                 )
 
             resp.raise_for_status()

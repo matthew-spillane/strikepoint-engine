@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from app.config import settings
 from app.models import ModuleResult
@@ -7,6 +8,8 @@ try:
     import httpx
 except ImportError:
     httpx = None  # type: ignore[assignment]
+
+logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 10
 POLL_TIMEOUT = 60
@@ -39,12 +42,33 @@ async def scan(url: str) -> ModuleResult:
             submit.raise_for_status()
             submit_data = submit.json()
 
-            scan_id = submit_data.get("result", {}).get("uuid")
-            if not scan_id:
+            result_field = submit_data.get("result")
+            if not isinstance(result_field, dict):
+                logger.error(
+                    "Cloudflare Radar submission returned unexpected response: %s",
+                    submit.text,
+                )
                 return ModuleResult(
                     module="cloudflare_radar",
                     status="error",
-                    findings={"error": "No scan ID returned from submission"},
+                    findings={
+                        "error": "Unexpected submission response format",
+                        "response_body": submit.text[:500],
+                    },
+                )
+
+            scan_id = result_field.get("uuid")
+            if not scan_id:
+                logger.error(
+                    "Cloudflare Radar submission missing uuid: %s", submit.text
+                )
+                return ModuleResult(
+                    module="cloudflare_radar",
+                    status="error",
+                    findings={
+                        "error": "No scan ID (uuid) in submission response",
+                        "response_body": submit.text[:500],
+                    },
                 )
 
             # Poll for results
@@ -55,8 +79,16 @@ async def scan(url: str) -> ModuleResult:
 
                 poll = await client.get(f"{base_url}/result/{scan_id}", headers=headers)
                 if poll.status_code == 200:
-                    data = poll.json().get("result", {})
-                    return _parse_result(data)
+                    poll_body = poll.json()
+                    data = poll_body.get("result")
+                    # Intermediate responses may return result as a string
+                    # (e.g. "pending"); only parse when we get a full dict.
+                    if isinstance(data, dict):
+                        return _parse_result(data)
+                    logger.debug(
+                        "Cloudflare Radar poll returned non-dict result: %s",
+                        type(data).__name__,
+                    )
 
             return ModuleResult(
                 module="cloudflare_radar",

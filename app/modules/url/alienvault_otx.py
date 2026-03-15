@@ -1,4 +1,4 @@
-from urllib.parse import urlparse
+from urllib.parse import quote
 
 from app.config import settings
 from app.models import ModuleResult
@@ -16,13 +16,21 @@ async def scan(url: str) -> ModuleResult:
     if httpx is None:
         return ModuleResult(module="alienvault_otx", status="skipped", findings={"error": "httpx not installed"})
 
+    api_key = settings.OTX_API_KEY
+    if not api_key:
+        return ModuleResult(
+            module="alienvault_otx",
+            status="skipped",
+            findings={"detail": "OTX_API_KEY not configured"},
+        )
+
     try:
-        domain = urlparse(url).hostname or ""
-        headers = {"X-OTX-API-KEY": settings.OTX_API_KEY}
+        encoded_url = quote(url, safe="")
+        headers = {"X-OTX-API-KEY": api_key}
 
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
-                f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/general",
+                f"https://otx.alienvault.com/api/v1/indicators/url/{encoded_url}/general",
                 headers=headers,
             )
             resp.raise_for_status()

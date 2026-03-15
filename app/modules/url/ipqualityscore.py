@@ -1,3 +1,4 @@
+import logging
 from urllib.parse import quote_plus
 
 from app.config import settings
@@ -8,6 +9,8 @@ try:
 except ImportError:
     httpx = None  # type: ignore[assignment]
 
+logger = logging.getLogger(__name__)
+
 
 async def scan(url: str) -> ModuleResult:
     if not settings.ipqualityscore_enabled:
@@ -17,13 +20,32 @@ async def scan(url: str) -> ModuleResult:
         return ModuleResult(module="ipqualityscore", status="skipped", findings={"error": "httpx not installed"})
 
     try:
-        encoded_url = quote_plus(url)
         api_key = settings.IPQUALITYSCORE_API_KEY
+        if not api_key:
+            return ModuleResult(
+                module="ipqualityscore",
+                status="skipped",
+                findings={"detail": "IPQUALITYSCORE_API_KEY not configured"},
+            )
+
+        encoded_url = quote_plus(url)
         endpoint = f"https://www.ipqualityscore.com/api/json/url/{api_key}/{encoded_url}"
+
+        logger.debug("IPQS request URL: %s", endpoint.replace(api_key, "***"))
 
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(endpoint, params={"strictness": 0})
             resp.raise_for_status()
+
+            if not resp.text.strip():
+                logger.error("IPQS returned empty response body for URL: %s", url)
+                return ModuleResult(
+                    module="ipqualityscore",
+                    status="error",
+                    findings={"error": "Empty response from IPQS API"},
+                )
+
+            logger.debug("IPQS raw response (first 300 chars): %s", resp.text[:300])
             data = resp.json()
 
         if not data.get("success", False):
