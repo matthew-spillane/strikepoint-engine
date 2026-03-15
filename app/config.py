@@ -25,7 +25,8 @@ class Settings:
 
     @property
     def OTX_API_KEY(self) -> str | None:
-        return os.getenv("OTX_API_KEY")
+        # Accept either name — Railway may have it set as ALIENVAULT_API_KEY
+        return os.getenv("OTX_API_KEY") or os.getenv("ALIENVAULT_API_KEY")
 
     @property
     def PHISHTANK_API_KEY(self) -> str | None:
@@ -33,7 +34,8 @@ class Settings:
 
     @property
     def IPQUALITYSCORE_API_KEY(self) -> str | None:
-        return os.getenv("IPQUALITYSCORE_API_KEY")
+        val = os.getenv("IPQUALITYSCORE_API_KEY")
+        return val.strip() if val else None
 
     @property
     def CLOUDFLARE_API_TOKEN(self) -> str | None:
@@ -83,7 +85,8 @@ class Settings:
 
     @property
     def ipqualityscore_enabled(self) -> bool:
-        return bool(self.IPQUALITYSCORE_API_KEY)
+        key = self.IPQUALITYSCORE_API_KEY
+        return bool(key and key.strip())
 
     @property
     def shodan_internetdb_enabled(self) -> bool:

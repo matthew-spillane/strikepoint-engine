@@ -72,10 +72,11 @@ async def scan(url: str) -> ModuleResult:
             )
 
         if not data.get("success", False):
+            logger.warning("[IPQS] success=false: %s", data.get("message", "(no message)"))
             return ModuleResult(
                 module="ipqualityscore",
                 status="skipped",
-                findings={"detail": data.get("message", "IPQS returned success=false")},
+                findings={"detail": "service temporarily unavailable"},
             )
 
         # Extract fields
