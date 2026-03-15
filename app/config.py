@@ -32,6 +32,10 @@ class Settings:
         return os.getenv("PHISHTANK_API_KEY")
 
     @property
+    def IPQUALITYSCORE_API_KEY(self) -> str | None:
+        return os.getenv("IPQUALITYSCORE_API_KEY")
+
+    @property
     def CLOUDFLARE_API_TOKEN(self) -> str | None:
         return os.getenv("CLOUDFLARE_API_TOKEN")
 
@@ -78,6 +82,10 @@ class Settings:
         return bool(self.CLOUDFLARE_API_TOKEN and self.CLOUDFLARE_ACCOUNT_ID)
 
     @property
+    def ipqualityscore_enabled(self) -> bool:
+        return bool(self.IPQUALITYSCORE_API_KEY)
+
+    @property
     def shodan_internetdb_enabled(self) -> bool:
         return bool(os.getenv("SHODAN_ENABLED"))
 
@@ -109,6 +117,7 @@ class Settings:
             "alienvault_otx": self.otx_enabled,
             "phishtank": self.phishtank_enabled,
             "cloudflare_radar": self.cloudflare_radar_enabled,
+            "ipqualityscore": self.ipqualityscore_enabled,
             "shodan_internetdb": self.shodan_internetdb_enabled,
             "anthropic_ai": self.anthropic_enabled,
             "whois_age": self.whois_enabled,
