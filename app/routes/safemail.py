@@ -16,7 +16,7 @@ from app.routes.safelink import run_url_pipeline
 router = APIRouter(prefix="/safemail", tags=["SafeMail"])
 
 # Modules too slow for bulk email URL scanning
-EMAIL_URL_SKIP_MODULES = {"urlscan"}
+EMAIL_URL_SKIP_MODULES = {"urlscan", "cloudflare_radar"}
 
 SAFEMAIL_TIMEOUT = 30  # seconds
 
