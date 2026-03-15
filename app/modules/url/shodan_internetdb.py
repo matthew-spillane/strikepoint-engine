@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import socket
 import traceback
@@ -26,15 +27,34 @@ async def scan(url: str) -> ModuleResult:
 
     try:
         hostname = urlparse(url).hostname or ""
-        logger.info("[SHODAN] Resolving hostname: %s", hostname)
-        try:
-            ip = socket.gethostbyname(hostname)
-        except socket.gaierror:
-            logger.warning("[SHODAN] DNS resolution failed for %s", hostname)
+        if not hostname:
+            logger.warning("[SHODAN] Could not extract hostname from URL: %s", url)
             return ModuleResult(
                 module="shodan_internetdb",
                 status="skipped",
-                findings={"detail": f"DNS resolution failed for {hostname}"},
+                findings={"detail": f"No hostname in URL: {url}"},
+            )
+
+        logger.info("[SHODAN] Resolving hostname: %s", hostname)
+
+        # Use async DNS resolution to avoid blocking the event loop
+        loop = asyncio.get_running_loop()
+        try:
+            infos = await loop.getaddrinfo(hostname, None, family=socket.AF_INET, type=socket.SOCK_STREAM)
+            if not infos:
+                logger.warning("[SHODAN] DNS returned no results for %s", hostname)
+                return ModuleResult(
+                    module="shodan_internetdb",
+                    status="skipped",
+                    findings={"detail": f"DNS resolution returned no results for {hostname}"},
+                )
+            ip = infos[0][4][0]
+        except socket.gaierror as dns_err:
+            logger.warning("[SHODAN] DNS resolution failed for %s: %s", hostname, dns_err)
+            return ModuleResult(
+                module="shodan_internetdb",
+                status="skipped",
+                findings={"detail": f"DNS resolution failed for {hostname}: {dns_err}"},
             )
 
         request_url = f"https://internetdb.shodan.io/{ip}"
@@ -50,6 +70,7 @@ async def scan(url: str) -> ModuleResult:
             )
 
             if resp.status_code == 404:
+                # 404 = no record in InternetDB; treat as clean/unknown, not error
                 return ModuleResult(
                     module="shodan_internetdb",
                     status="completed",

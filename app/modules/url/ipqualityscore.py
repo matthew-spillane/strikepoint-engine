@@ -1,3 +1,4 @@
+import json
 import logging
 import traceback
 from urllib.parse import quote_plus
@@ -21,7 +22,7 @@ async def scan(url: str) -> ModuleResult:
         return ModuleResult(module="ipqualityscore", status="skipped", findings={"error": "httpx not installed"})
 
     try:
-        api_key = settings.IPQUALITYSCORE_API_KEY
+        api_key = (settings.IPQUALITYSCORE_API_KEY or "").strip()
         if not api_key:
             return ModuleResult(
                 module="ipqualityscore",
@@ -40,9 +41,11 @@ async def scan(url: str) -> ModuleResult:
             resp = await client.get(endpoint, params={"strictness": 0})
             logger.info("[IPQS] Response status: %d", resp.status_code)
             logger.info("[IPQS] Response body (first 500 chars): %s", resp.text[:500])
+
             resp.raise_for_status()
 
-            if not resp.text.strip():
+            raw_text = resp.text.strip()
+            if not raw_text:
                 logger.error("[IPQS] Empty response body for URL: %s", url)
                 return ModuleResult(
                     module="ipqualityscore",
@@ -50,7 +53,23 @@ async def scan(url: str) -> ModuleResult:
                     findings={"error": "Empty response from IPQS API"},
                 )
 
-            data = resp.json()
+            try:
+                data = resp.json()
+            except (json.JSONDecodeError, ValueError) as je:
+                logger.error("[IPQS] JSON decode failed: %s — raw body: %s", je, resp.text[:500])
+                return ModuleResult(
+                    module="ipqualityscore",
+                    status="error",
+                    findings={"error": f"Invalid JSON from IPQS: {je}", "response_body": resp.text[:500]},
+                )
+
+        if not isinstance(data, dict):
+            logger.error("[IPQS] Response JSON is not a dict: %r", type(data).__name__)
+            return ModuleResult(
+                module="ipqualityscore",
+                status="error",
+                findings={"error": "IPQS returned non-dict JSON", "response_body": resp.text[:500]},
+            )
 
         if not data.get("success", False):
             return ModuleResult(
