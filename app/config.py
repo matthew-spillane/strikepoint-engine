@@ -78,6 +78,10 @@ class Settings:
         return bool(self.CLOUDFLARE_API_TOKEN and self.CLOUDFLARE_ACCOUNT_ID)
 
     @property
+    def shodan_internetdb_enabled(self) -> bool:
+        return bool(os.getenv("SHODAN_ENABLED"))
+
+    @property
     def anthropic_enabled(self) -> bool:
         return bool(self.ANTHROPIC_API_KEY)
 
@@ -105,6 +109,7 @@ class Settings:
             "alienvault_otx": self.otx_enabled,
             "phishtank": self.phishtank_enabled,
             "cloudflare_radar": self.cloudflare_radar_enabled,
+            "shodan_internetdb": self.shodan_internetdb_enabled,
             "anthropic_ai": self.anthropic_enabled,
             "whois_age": self.whois_enabled,
             "ssl_check": self.ssl_check_enabled,
