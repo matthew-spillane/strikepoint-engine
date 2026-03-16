@@ -35,26 +35,34 @@ async def scan(url: str) -> ModuleResult:
 
         logger.info("[OTX] URL indicator endpoint: %s", url_endpoint)
 
+        pulse_count = 0
+        pulses = []
+        tags = []
+
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(url_endpoint, headers=headers)
             logger.info("[OTX] URL lookup: status=%d body=%s", resp.status_code, resp.text[:300])
-            resp.raise_for_status()
-            data = resp.json()
 
-        pulse_count = data.get("pulse_info", {}).get("count", 0)
-        pulses = data.get("pulse_info", {}).get("pulses", [])
-        tags = list({tag for p in pulses[:10] for tag in p.get("tags", [])})
+            if resp.status_code == 200:
+                data = resp.json()
+                pulse_count = data.get("pulse_info", {}).get("count", 0)
+                pulses = data.get("pulse_info", {}).get("pulses", [])
+                tags = list({tag for p in pulses[:10] for tag in p.get("tags", [])})
+                logger.info("[OTX] URL lookup result: pulse_count=%d", pulse_count)
+            elif resp.status_code in (400, 404):
+                # OTX returns 400/404 for URLs it hasn't indexed — not an error
+                logger.info("[OTX] URL not in OTX database (status %d), trying hostname fallback", resp.status_code)
+            else:
+                # Unexpected status — log but don't crash
+                logger.warning("[OTX] Unexpected status %d from URL lookup: %s", resp.status_code, resp.text[:300])
 
-        logger.info("[OTX] URL lookup result: pulse_count=%d", pulse_count)
-
-        # OTX often indexes phishing/malware under hostname indicator only.
-        # If URL lookup returns nothing, fall back to the hostname indicator.
-        if pulse_count == 0:
-            hostname = urlparse(url).hostname or ""
-            if hostname:
-                hostname_endpoint = f"https://otx.alienvault.com/api/v1/indicators/hostname/{hostname}/general"
-                logger.info("[OTX] 0 pulses from URL — trying hostname fallback: %s", hostname_endpoint)
-                async with httpx.AsyncClient(timeout=10) as client:
+            # OTX often indexes phishing/malware under hostname indicator only.
+            # Fall back to hostname if URL lookup returned 0 pulses or wasn't found.
+            if pulse_count == 0:
+                hostname = urlparse(url).hostname or ""
+                if hostname:
+                    hostname_endpoint = f"https://otx.alienvault.com/api/v1/indicators/hostname/{hostname}/general"
+                    logger.info("[OTX] Trying hostname fallback: %s", hostname_endpoint)
                     h_resp = await client.get(hostname_endpoint, headers=headers)
                     logger.info(
                         "[OTX] Hostname lookup: status=%d body=%s",
